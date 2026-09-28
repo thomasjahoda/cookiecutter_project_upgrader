@@ -45,13 +45,19 @@ def _git_repository_has_local_changes(git_repository: Path):
         raise Exception("could not determine whether git worktree is clean: " + repr(result))
 
 
+def _git_dir(git_repository: str) -> str:
+    """The repository's git directory. In a linked worktree `.git` is a file, not this directory."""
+    return subprocess.run(["git", "rev-parse", "--absolute-git-dir"], cwd=git_repository,
+                          stdout=subprocess.PIPE, universal_newlines=True, check=True).stdout.strip()
+
+
 def update_project_template_branch(context: MutableMapping[str, str], project_directory: str, branch: str,
                                    upgrade_branch: Optional[str], merge_now: Optional[bool],
                                    push_template_branch_changes: Optional[bool],
                                    exclude_pathspecs: Tuple[str, ...], interactive: bool):
     """Update template branch from a template url"""
     template_url = context['_template']
-    tmp_directory = os.path.join(project_directory, ".git", "cookiecutter")
+    tmp_directory = os.path.join(_git_dir(project_directory), "cookiecutter")
     project_directory_name = os.path.basename(project_directory)
     tmp_git_worktree_directory = os.path.join(tmp_directory, context.get('project_slug') or project_directory_name)
 

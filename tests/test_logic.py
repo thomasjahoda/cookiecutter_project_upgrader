@@ -120,6 +120,38 @@ def test_first_run_creates_branch_on_first_commit_and_updates_based_on_template(
     assert project_new_file.read_text(encoding="utf-8") == "new file text"
 
 
+def test_update_from_a_linked_worktree(cookiecutter_template_directory: Path,
+                                       cookies: Cookies):
+    # In a worktree created by `git worktree add`, `.git` is a file pointing at the main repository's git dir.
+    result: Result = cookies.bake(extra_context=SAMPLE_CONTEXT, template=str(cookiecutter_template_directory))
+    if result.exception is not None:
+        raise result.exception
+    project_directory = Path(result.project)
+    _initialize_git_repo(project_directory)
+    subprocess.run(["git", "add", "-A"], cwd=str(project_directory), check=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=str(project_directory), check=True)
+
+    cookiecutter_template_directory.joinpath("{{cookiecutter.project_slug}}", "README.rst").write_text("updated readme")
+    subprocess.run(["git", "add", "-A"], cwd=str(cookiecutter_template_directory), check=True)
+    subprocess.run(["git", "commit", "-m", "updated readme"], cwd=str(cookiecutter_template_directory), check=True)
+
+    with CreateTempDirectory("linked_worktree_parent") as worktree_parent:
+        linked_worktree = worktree_parent.joinpath(SAMPLE_CONTEXT["project_slug"])
+        subprocess.run(["git", "worktree", "add", "-b", "feature", str(linked_worktree)],
+                       cwd=str(project_directory), check=True)
+        assert linked_worktree.joinpath(".git").is_file()
+
+        context = json.loads(linked_worktree.joinpath("docs", "cookiecutter_input.json").read_text(encoding="utf-8"))
+        context['_template'] = str(cookiecutter_template_directory)
+        update_project_template_branch(context, str(linked_worktree), "cookiecutter-template", "master",
+                                       merge_now=True, push_template_branch_changes=False, exclude_pathspecs=(),
+                                       interactive=False)
+
+        assert linked_worktree.joinpath("README.rst").read_text(encoding="utf-8") == "updated readme"
+        # the main worktree is left alone
+        assert project_directory.joinpath("README.rst").read_text(encoding="utf-8") != "updated readme"
+
+
 def test_change_project_slug(cookiecutter_template_directory: Path,
                              cookies: Cookies):
     result: Result = cookies.bake(extra_context=SAMPLE_CONTEXT, template=str(cookiecutter_template_directory))
